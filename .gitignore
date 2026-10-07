@@ -1,0 +1,7 @@
+# Python virtual environments
+venv/
+
+# Compiled binaries not already covered by hertzbleed/.gitignore
+sike_local_orig
+test/hw_sender
+test/proper_hw_sender
