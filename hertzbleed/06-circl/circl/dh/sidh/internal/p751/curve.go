@@ -480,10 +480,16 @@ func Prep_ct(cparams *ProjectiveCurveParameters, nbits uint, sk_recovered []uint
 
 
 
-// Scalarmul3Pt is a right-to-left point multiplication that given the
-// x-coordinate of P, Q and P-Q calculates the x-coordinate of R=Q+[scalar]P.
-// nbits must be smaller or equal to len(scalar).
-func ScalarMul3Pt(cparams *ProjectiveCurveParameters, P, Q, PmQ *ProjectivePoint, nbits uint, scalar []uint8) ProjectivePoint {
+// scalarMul3PtRef is the ORIGINAL (unmodified) CIRCL right-to-left
+// point multiplication that given the x-coordinate of P, Q and P-Q calculates
+// the x-coordinate of R=Q+[scalar]P. nbits must be smaller or equal to
+// len(scalar).
+//
+// Hertzbleed-defense project: the public entry point ScalarMul3Pt now lives in
+// defense.go and dispatches to this reference implementation when no defense
+// is configured. Keep this function byte-for-byte equivalent to upstream: it is
+// the oracle for TestChunkedLadderMatchesOriginal.
+func scalarMul3PtRef(cparams *ProjectiveCurveParameters, P, Q, PmQ *ProjectivePoint, nbits uint, scalar []uint8) ProjectivePoint {
 	var R0, R2, R1 ProjectivePoint
 	aPlus2Over4 := CalcAplus2Over4(cparams)
 	R1 = *P

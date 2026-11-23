@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -135,6 +136,15 @@ func sike_thread(ssBsz int, ct []byte, pk *sidh.PublicKey, sk *sidh.PrivateKey, 
 // number_thread: How many number of go routine we want to run simultaneously?
 // iterations: How many iterations we want to run for data collection?
 func main() {
+	// Hertzbleed defense project: select the ladder defense from HB_* env vars
+	// (see dh/sidh/internal/p751/defense.go). Unset => original CIRCL ladder.
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	if cfg, err := p751.ConfigureFromEnv(); err != nil {
+		fmt.Fprintln(os.Stderr, "defense config error:", err)
+		os.Exit(2)
+	} else {
+		fmt.Println("DEFENSE", cfg)
+	}
 	all_start := time.Now()
 
 	// Length of secret key is 378 because we are in p751
@@ -293,6 +303,7 @@ func main() {
 		all_duration := time.Since(all_start)
 		fmt.Println("ALL_DURATION", all_duration)
 	}
+	fmt.Printf("DEFENSE_STATS %+v\n", p751.GetDefenseStats())
 
 	return
 

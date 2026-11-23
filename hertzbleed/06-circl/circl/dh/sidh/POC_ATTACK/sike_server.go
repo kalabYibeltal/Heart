@@ -8,9 +8,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/cloudflare/circl/dh/sidh"
 	"github.com/cloudflare/circl/dh/sidh/internal/common"
+	"github.com/cloudflare/circl/dh/sidh/internal/p751"
 )
 
 type sikeVec struct {
@@ -23,6 +25,15 @@ type sikeVec struct {
 }
 
 func main() {
+	// Hertzbleed defense project: select the ladder defense from HB_* env vars
+	// (see dh/sidh/internal/p751/defense.go). Unset => original CIRCL ladder.
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	if cfg, err := p751.ConfigureFromEnv(); err != nil {
+		fmt.Fprintln(os.Stderr, "defense config error:", err)
+		os.Exit(2)
+	} else {
+		fmt.Println("DEFENSE", cfg)
+	}
 
 	var v sikeVec
 	v.id = 1

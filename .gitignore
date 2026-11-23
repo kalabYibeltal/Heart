@@ -5,3 +5,4 @@ venv/
 sike_local_orig
 test/hw_sender
 test/proper_hw_sender
+hertzbleed/defense/microbench/pstate_latency
