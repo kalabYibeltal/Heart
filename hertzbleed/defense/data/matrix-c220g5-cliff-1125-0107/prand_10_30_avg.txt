@@ -1,0 +1,7 @@
+# prand_10_30 N0=599 N1=599 mean0=0.562644 mean1=0.560057 delta=-0.002587 (-0.460%) pooled_sd=0.01059 cohen_d=0.2442
+K=     1  acc_boot=0.5470  acc_gauss=0.5486  t_welch=0.17
+K=    10  acc_boot=0.6475  acc_gauss=0.6503  t_welch=0.55
+K=   100  acc_boot=0.8907  acc_gauss=0.8890  t_welch=1.73
+K=  1000  acc_boot=nan  acc_gauss=0.9999  t_welch=5.46
+K= 10000  acc_boot=nan  acc_gauss=1.0000  t_welch=17.27
+K99 = 363  -> time-to-key ~ 363 x 378 bits = 137214 measurements (x samples/measurement)
