@@ -305,6 +305,20 @@ TestBlindedLadderMatchesOriginal / TestSharedSecretUnderDefenses
       +62% for 8_16, both from the 1124-2144 run). Honest bound for 8_30: d < 0.07+2·0.058
       ≈ 0.18 ⇒ K99 ≳ 650 (≈7× baseline); d=0.07 may be a real small leak, so it needs
       more N to tell.
+- [x] 2026-11-25 FIRST DIAL POINT FOUND (cliff dir, reviewed by Claude):
+        none          518.0 / 510.9 ms  Δ=−1.37%  d=0.56  K99≈69
+        prand_10_30   562.6 / 560.1 ms  Δ=−0.46%  d=0.24  K99≈363  slowdown +8.6%
+      d=0.24 is ≈4 SE from 0, so this is a REAL partial leak: ~5× more measurements per bit
+      than baseline, at +8.6% time. Together with 8_30 (undetectable, +15%) and 15_30 (full
+      leak, +1%), this is the security/performance dial. Next: plot K99 vs slowdown;
+      more N at 8_30 and 10_30; try 9_30, 11_30.
+- [ ] 2026-11-25 UNATTENDED in tmux session "hb" (`tmux attach -t hb`, log ~/overnight_cliff.log):
+      defense/scripts/overnight_cliff.sh runs prand_12_30 + prand_14_30 into the cliff dir,
+      inserts an AUTO-GENERATED summary block above this line, commits locally, and
+      tries to push. PUSH WILL FAIL: the node has no GitHub credentials (no ssh key, no
+      helper). The user must `cd ~/Heart && git push` from their own VS Code terminal.
+      The original run was interrupted mid prand_12_30; the partial data was deleted before rerunning.
+      Long runs: ALWAYS start them in tmux (VS Code disconnect can kill Claude's children).
 - [ ] RUNNING 2026-11-25: CLIFF SWEEP, min ratio inside the cliff: none, prand_10_30,
       prand_12_30, prand_14_30 (same setup) → data/matrix-c220g5-cliff-<date>/. Hope: d
       between 0.07 and 0.5 (K99 100–1000) = the dial.

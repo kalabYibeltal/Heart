@@ -1,4 +1,4 @@
-host=node0.kalab-327813.michigan-bigdata-pg0.wisc.cloudlab.us date=2026-11-25T01:07:11-06:00 key=1 bit=2 threads=300 iters=100 rounds=6 pstate_backend=hwp
+host=node0.kalab-327813.michigan-bigdata-pg0.wisc.cloudlab.us date=2026-11-25T01:46:58-06:00 key=1 bit=2 threads=300 iters=100 rounds=6 pstate_backend=hwp
 cpu:        Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz
 driver:    intel_pstate
 pstate:    active  no_turbo=0
