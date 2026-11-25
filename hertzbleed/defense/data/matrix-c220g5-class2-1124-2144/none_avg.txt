@@ -1,0 +1,7 @@
+# none N0=599 N1=599 mean0=0.518227 mean1=0.510008 delta=-0.008219 (-1.586%) pooled_sd=0.01257 cohen_d=0.6537
+K=     1  acc_boot=0.7755  acc_gauss=0.6281  t_welch=0.46
+K=    10  acc_boot=0.8852  acc_gauss=0.8493  t_welch=1.46
+K=   100  acc_boot=0.9985  acc_gauss=0.9995  t_welch=4.62
+K=  1000  acc_boot=nan  acc_gauss=1.0000  t_welch=14.62
+K= 10000  acc_boot=nan  acc_gauss=1.0000  t_welch=46.23
+K99 = 51  -> time-to-key ~ 51 x 378 bits = 19278 measurements (x samples/measurement)

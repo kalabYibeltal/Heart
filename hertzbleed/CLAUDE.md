@@ -164,7 +164,9 @@ Manual equivalents:
   RAPL commands apply to every package (multi-socket).
 - `defense/scripts/freqlog.py`: per-CPU scaling_cur_freq + pkg energy_uj every N ms → CSV.
 - `defense/scripts/run_defense_matrix.sh`: sike_local flip 0/1 alternating per defense
-  → `defense/data/matrix-<host>-<date>/` (gitignored) + averaging curves. `DRY=1` prints commands only.
+  → `defense/data/matrix-<host>-<date>/` (COMMITTED: `!/defense/data/` in .gitignore,
+  because nodes are ephemeral; ~0.5 MB per matrix) + averaging curves.
+  Also there: `pstate-latency-c220g5-1124/`, `rapl-sweep-c220g5-1124/` (each has a README). `DRY=1` prints commands only.
 - `defense/analysis/averaging_curve.py`: accuracy vs K (bootstrap + Gaussian
   Φ(d√K/2)), Welch t, K99, time-to-key; parses ALL_DURATION lines or numbers.
 - `defense/microbench/pstate_latency.c`: P-state transition latency via

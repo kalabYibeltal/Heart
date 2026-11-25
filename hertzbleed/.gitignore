@@ -96,3 +96,6 @@ sike_client
 bit_recovered.txt
 
 circl/
+
+# Experiment results ARE committed (CloudLab nodes are ephemeral)
+!/defense/data/

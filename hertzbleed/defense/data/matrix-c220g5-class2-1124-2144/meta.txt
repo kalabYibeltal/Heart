@@ -1,0 +1,11 @@
+host=node0.kalab-327813.michigan-bigdata-pg0.wisc.cloudlab.us date=2026-11-24T21:57:20-06:00 key=1 bit=2 threads=300 iters=100 rounds=6 pstate_backend=hwp
+cpu:        Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz
+driver:    intel_pstate
+pstate:    active  no_turbo=0
+governor:  powersave
+min/max:   800000 / 3000000 kHz
+RAPL package-0 c0:   long_term limit=45000000 max=85000000 window=999424us
+RAPL package-0 c1:   short_term limit=102000000 max=187000000 window=1952us
+RAPL package-1 c0:   long_term limit=45000000 max=85000000 window=999424us
+RAPL package-1 c1:   short_term limit=102000000 max=187000000 window=1952us
+PLATFORM_INFO(0xCE)=0x8007082cf3811600  PERF_CTL(0x199) cpu0=0x1e00  PKG_POWER_LIMIT(0x610)=0x3833000148168

@@ -1,0 +1,4 @@
+HWP sibling cpu24 also written
+HWP enabled: using IA32_HWP_REQUEST min=max (orig 0x80001e08)
+TSC 2200.0 ticks/us
+steady period: ratio 22 = 2038 ticks, ratio 14 = 3202 ticks (ratio of periods 0.636, expected 0.636)

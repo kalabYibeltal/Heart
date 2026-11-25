@@ -1,0 +1,7 @@
+# pstate_rand14 N0=599 N1=599 mean0=0.673967 mean1=0.674239 delta=+0.000272 (+0.040%) pooled_sd=0.009733 cohen_d=0.0279
+K=     1  acc_boot=0.5030  acc_gauss=0.5056  t_welch=0.02
+K=    10  acc_boot=0.5157  acc_gauss=0.5176  t_welch=0.06
+K=   100  acc_boot=0.5517  acc_gauss=0.5556  t_welch=0.20
+K=  1000  acc_boot=nan  acc_gauss=0.6707  t_welch=0.62
+K= 10000  acc_boot=nan  acc_gauss=0.9188  t_welch=1.98
+K99 = 27715  -> time-to-key ~ 27715 x 378 bits = 10476270 measurements (x samples/measurement)
