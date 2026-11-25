@@ -9,13 +9,18 @@
 // Also reports the longest single-iteration gap (the core halts during the
 // voltage/frequency switch on many Intel parts).
 //
-// Requires root, `modprobe msr`, and intel_pstate in passive mode with the
+// On HWP CPUs (IA32_PM_ENABLE=1, e.g. c220g5) it writes IA32_HWP_REQUEST
+// min=max=ratio instead (auto-detected; set hwp_dynamic_boost=0 first) and
+// restores the original request at exit.
+// Otherwise requires root, `modprobe msr`, and intel_pstate in passive mode with the
 // userspace governor (defense/scripts/hbctl.sh pstate-passive) so the kernel
 // does not fight the PERF_CTL writes.
 //
 // Usage: sudo ./pstate_latency <cpu> <ratioA> <ratioB> [trials=50]
 // Output (stdout, CSV): trial,from,to,latency_us,max_gap_us
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include <fcntl.h>
 #include <sched.h>
 #include <stdint.h>
@@ -39,13 +44,26 @@ static inline void work(void)
 }
 
 static int msr_fd;
+static int sib_fd[8], nsib;  // HWP: SMT siblings' msr fds (core window = max over siblings)
+static uint64_t sib_orig[8];
+static int hwp;              // IA32_PM_ENABLE[0]: HWP owns P-states, PERF_CTL ignored
+static uint64_t hwp_orig;    // IA32_HWP_REQUEST at start (restored at exit)
 static void set_ratio(uint64_t r)
 {
-	uint64_t v = (r & 0xff) << 8;
-	if (pwrite(msr_fd, &v, 8, 0x199) != 8) {
-		perror("pwrite PERF_CTL");
+	r &= 0xff;
+	uint64_t v = hwp ? (hwp_orig & ~0xffffffULL) | r << 8 | r : r << 8;
+	if (pwrite(msr_fd, &v, 8, hwp ? 0x774 : 0x199) != 8) {
+		perror(hwp ? "pwrite HWP_REQUEST" : "pwrite PERF_CTL");
 		exit(1);
 	}
+	for (int i = 0; i < nsib; i++)  // siblings AFTER own cpu: latency t0 is own write
+		if (pwrite(sib_fd[i], &v, 8, 0x774) != 8) { perror("pwrite sibling HWP_REQUEST"); exit(1); }
+}
+static void restore_hwp(void)
+{
+	if (hwp && pwrite(msr_fd, &hwp_orig, 8, 0x774) != 8) perror("restore HWP_REQUEST");
+	for (int i = 0; i < nsib; i++)
+		if (pwrite(sib_fd[i], &sib_orig[i], 8, 0x774) != 8) perror("restore sibling HWP_REQUEST");
 }
 
 static double tsc_per_us(void)
@@ -104,6 +122,31 @@ int main(int argc, char **argv)
 	char path[64];
 	snprintf(path, sizeof path, "/dev/cpu/%d/msr", cpu);
 	if ((msr_fd = open(path, O_RDWR)) < 0) { perror(path); return 1; }
+
+	uint64_t pm = 0;
+	if (pread(msr_fd, &pm, 8, 0x770) == 8 && (pm & 1)) {
+		hwp = 1;
+		if (pread(msr_fd, &hwp_orig, 8, 0x774) != 8) { perror("pread HWP_REQUEST"); return 1; }
+		char sp[96], buf[64];
+		snprintf(sp, sizeof sp, "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
+		FILE *tf = fopen(sp, "r");
+		if (tf && fgets(buf, sizeof buf, tf)) {
+			for (char *tok = strtok(buf, ",\n"); tok && nsib < 8; tok = strtok(0, ",\n")) {
+				int a = atoi(tok), b = strchr(tok, '-') ? atoi(strchr(tok, '-') + 1) : a;
+				for (int c = a; c <= b && nsib < 8; c++) {
+					if (c == cpu) continue;
+					snprintf(path, sizeof path, "/dev/cpu/%d/msr", c);
+					if ((sib_fd[nsib] = open(path, O_RDWR)) < 0) { perror(path); return 1; }
+					if (pread(sib_fd[nsib], &sib_orig[nsib], 8, 0x774) != 8) { perror("pread sibling"); return 1; }
+					fprintf(stderr, "HWP sibling cpu%d also written\n", c);
+					nsib++;
+				}
+			}
+		}
+		if (tf) fclose(tf);
+		atexit(restore_hwp);
+		fprintf(stderr, "HWP enabled: using IA32_HWP_REQUEST min=max (orig 0x%lx)\n", hwp_orig);
+	}
 
 	double tpu = tsc_per_us();
 	fprintf(stderr, "TSC %.1f ticks/us\n", tpu);

@@ -69,7 +69,9 @@ type DefenseConfig struct {
 	PStateRatios []uint64
 	// PStateBackend: "msr" (write IA32_PERF_CTL 0x199 via /dev/cpu/N/msr;
 	// fast, needs intel_pstate=passive + userspace governor or
-	// intel_pstate disabled so the kernel does not overwrite it) or "sysfs"
+	// intel_pstate disabled so the kernel does not overwrite it; ignored when
+	// HWP is enabled), "hwp" (write IA32_HWP_REQUEST 0x774 min=max=ratio; for
+	// HWP-enabled CPUs, Skylake+) or "sysfs"
 	// (write scaling_min_freq/scaling_max_freq; slow, works with intel_pstate
 	// active).
 	PStateBackend string
@@ -179,6 +181,8 @@ func Configure(cfg DefenseConfig) error {
 		switch cfg.PStateBackend {
 		case "msr":
 			st.setter, err = newMSRSetter()
+		case "hwp":
+			st.setter, err = newHWPSetter()
 		case "sysfs":
 			st.setter = &sysfsSetter{}
 		case "fake":
@@ -467,6 +471,8 @@ type pstateSetter interface {
 const (
 	msrPlatformInfo = 0xCE
 	msrPerfCtl      = 0x199
+	msrPMEnable     = 0x770
+	msrHWPRequest   = 0x774
 )
 
 func applyRandomPState(st *defenseState, cpu int) {
@@ -524,6 +530,95 @@ func (s *msrSetter) SetRatio(cpu int, ratio uint64) error {
 	var b [8]byte
 	binary.LittleEndian.PutUint64(b[:], (ratio&0xff)<<8) // IA32_PERF_CTL[15:8]
 	_, err = f.WriteAt(b[:], msrPerfCtl)
+	return err
+}
+
+// hwpSetter forces a ratio on HWP-enabled CPUs (Skylake+ with IA32_PM_ENABLE=1,
+// where IA32_PERF_CTL is ignored) by writing IA32_HWP_REQUEST (0x774) with
+// minimum = maximum = ratio and desired = 0 (hardware-autonomous inside a
+// zero-width window). The upper bits (EPP, activity window, package-control)
+// are preserved from the value read at first use of each CPU. Set
+// /sys/devices/system/cpu/intel_pstate/hwp_dynamic_boost=0 first, otherwise
+// intel_pstate may rewrite the register. Verified HONORED on CloudLab c220g5
+// (Xeon Silver 4114) for ratios 8..30.
+//
+// SMT: the core resolves its window as [max of sibling mins, max of sibling
+// maxes] even when a sibling is idle, so the ratio is written to EVERY thread
+// sibling of cpu (thread_siblings_list), not just cpu.
+type hwpSetter struct {
+	*msrSetter
+	hmu  sync.Mutex
+	base map[int]uint64
+	sibs map[int][]int
+}
+
+func newHWPSetter() (*hwpSetter, error) {
+	m, err := newMSRSetter()
+	if err != nil {
+		return nil, err
+	}
+	s := &hwpSetter{msrSetter: m, base: map[int]uint64{}, sibs: map[int][]int{}}
+	f, _ := m.file(0)
+	var b [8]byte
+	if _, err := f.ReadAt(b[:], msrPMEnable); err != nil || binary.LittleEndian.Uint64(b[:])&1 == 0 {
+		return nil, fmt.Errorf("defense: hwp backend: HWP not enabled (IA32_PM_ENABLE=0 or unreadable: %v); use the msr backend", err)
+	}
+	return s, nil
+}
+
+func (s *hwpSetter) SetRatio(cpu int, ratio uint64) error {
+	s.hmu.Lock()
+	sib, ok := s.sibs[cpu]
+	s.hmu.Unlock()
+	if !ok {
+		sib = threadSiblings(cpu)
+		s.hmu.Lock()
+		s.sibs[cpu] = sib
+		s.hmu.Unlock()
+	}
+	for _, c := range sib {
+		if err := s.setOne(c, ratio); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// threadSiblings returns the SMT siblings of cpu (including cpu itself), or
+// just {cpu} if the topology file is unreadable.
+func threadSiblings(cpu int) []int {
+	b, err := os.ReadFile(fmt.Sprintf("/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu))
+	if err != nil {
+		return []int{cpu}
+	}
+	out, err := parseInts(strings.TrimSpace(string(b)))
+	if err != nil || len(out) == 0 {
+		return []int{cpu}
+	}
+	return out
+}
+
+func (s *hwpSetter) setOne(cpu int, ratio uint64) error {
+	f, err := s.file(cpu)
+	if err != nil {
+		return err
+	}
+	s.hmu.Lock()
+	base, ok := s.base[cpu]
+	s.hmu.Unlock()
+	var b [8]byte
+	if !ok {
+		if _, err := f.ReadAt(b[:], msrHWPRequest); err != nil {
+			return err
+		}
+		base = binary.LittleEndian.Uint64(b[:]) &^ 0xffffff // drop min[7:0], max[15:8], desired[23:16]
+		s.hmu.Lock()
+		s.base[cpu] = base
+		s.hmu.Unlock()
+	}
+	r := ratio & 0xff
+	binary.LittleEndian.PutUint64(b[:], base|r<<8|r)
+	_, err = f.WriteAt(b[:], msrHWPRequest)
 	return err
 }
 
