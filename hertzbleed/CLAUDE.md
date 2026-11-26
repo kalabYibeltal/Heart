@@ -178,6 +178,76 @@ HB_PSTATE_RATIOS=8,12,20  HB_PSTATE_BACKEND=msr|hwp|sysfs  HB_PSTATE_SCOPE=cpu|a
 HB_NOISE_NS=50000  HB_BLIND=1   (can be combined; P-state needs sudo)
 e.g. `HB_STAGES=14 HB_WORKERS=16 ./sike_local 0 1 2 300 100`
 
+## CIRCL's deployed Hertzbleed patch = ciphertext validation (analysed 2026-11-25)
+Upstream clone for reference: `~/circl-upstream` (github.com/cloudflare/circl, NOT in Heart).
+- THE COMMIT: `10923e8` "sike mitigation of remote timing attack", 2022-06-03, author
+  Yingchen Wang (USC, a Hertzbleed author). Our base `1fc3638` (2021-06-07) is BEFORE it, so
+  06-circl/circl is unpatched (correct for the attack). Same change in p434/p503/p751 + templates.
+  After 10923e8 upstream made only formatting and doc changes (SIDH is deprecated but still in the tree).
+- In between: `5fa296f` (2021-10-10, armfazh, "Blinds the difference point…", bug reported
+  by Hovav & Wang). This was the FIRST fix: inside the ladder, `cmov` a random point into R1
+  whenever R1.X or R1.Z is zero (constant time). 10923e8 REMOVED that blinding and replaced it
+  with validation. So CIRCL went from a constant-time in-ladder fix (Class 1, power) to an
+  input-rejection fix (also Class 1, but it acts before the secret is touched). (c53fd24 = test-only.)
+- WHERE: only `DeriveSecretB` (3-torsion side = SIKE decapsulator's STATIC key), before
+  `ScalarMul3Pt`. DeriveSecretA (ephemeral side) is not validated. On failure, ss = crypto/rand
+  bytes and it returns early. Decaps then fails the re-encryption compare and returns H(s‖ct)
+  (implicit rejection), so the attacker gets no explicit error. Note that the REJECT path does NOT run
+  the ladder/isogeny, so it is much faster than accept. That is fine because it depends only on the public ct.
+- ALGORITHM = CLN test (Costello–Longa–Naehrig 2016), as suggested by De Feo et al., ePrint
+  2022/054 "SIKE Channels". Input: ct/pk = x(P), x(Q), x(P−Q); curve A recovered from them.
+  0. x(P−Q) ∉ {T=(0,0), O}  (X≠0 and Z≠0).
+  1. e3 = floor((nbits+1)/log2 3) = 239 for p751 (nbits=378). Triple P and Q (e3−1) times
+     (Pow3k, x-only). If either is O, it is not of full order. Reject.
+  2. If [3^(e3−1)]P = ±[3^(e3−1)]Q (X_P·Z_Q − Z_P·X_Q = 0), P and Q are dependent. Reject.
+  3. Triple once more: both must now be O (order exactly 3^e3). Otherwise reject.
+  Pass ⇒ P,Q is a basis of E_A[3^e3] (CLN: then E_A is also supersingular).
+  Data-dependent branches act only on PUBLIC input. e3 uses float math (fine).
+- WHY IT KILLS HERTZBLEED: the attack ct (`Prep_ct` in our circl.patch) is built from
+  P2+P3 (order 2^372·3^239) and T=(0,0) (order 2), i.e. points with 2-power components chosen
+  so that the ladder hits the anomalous projective zero at the target bit. Those points cannot
+  have order 3^239. VERIFIED on m510 (`cln_probe_test.go`): 5/5 honest Alice pks pass; 15/15
+  attack cts (target bits 1,2,10,100,300) are rejected at CHECK 3 (order ≠ 3^e3).
+  Characterization point: this does not make power constant. It makes the
+  attacker-CONTROLLED secret-dependent zeros unreachable (it closes the amplifier, not the
+  channel). Honest inputs still give normal HW/HD power variation, but without attacker control
+  it is not amplified into a bit-distinguisher. It is also specific to the SIKE algorithm (high human
+  effort, does not transfer to other primitives).
+- COST (m510 D-1548, idle, powersave, Go bench 200×): CLN 3.9–4.5 ms vs DeriveSecretB 14.3 ms
+  (≈+27–31% of that call); PublicKeyGenA (re-encryption) 14.7 ms ⇒ ≈ +13–15% of decaps
+  (ESTIMATE from the parts, not an end-to-end decaps timing). The CIRCL/paper figure is ~5–11%. Next:
+  measure end-to-end Decapsulate with vs. without validation, and run sike_local with validation
+  in DeriveSecretB (expect d≈0: every attack ct is rejected).
+- CLARIFICATIONS (Q&A 2026-11-25):
+  * WHEN: the check runs ONCE, at the start of DeriveSecretB, on the input points (never inside the ladder).
+    That is enough because every ladder register is aP+bQ; if P,Q is a basis of E[3^e3], every
+    register has 3-power order, so it can never be T (order 2) or O at ANY step. The attacker
+    PLANTS the zero via the choice of P,Q (Prep_ct solves for points that put T into R1/R2 at
+    the target bit). A check at the zero itself would be a secret-dependent branch, which is why 5fa296f
+    had to use a per-iteration constant-time cmov.
+  * FALSE POSITIVES: none. An honest ct = 2^e2-isogeny image of the 3^e3 basis; the degree is
+    coprime to 3, so the basis is kept. The check is deterministic. e3 via float is correct for all
+    sets (137/159/239). Twist points: twist order (p−1)^2 has no factor of 3, so they are rejected.
+  * FALSE NEGATIVES: none for the Hertzbleed zero (T/O). NOT ruled out: weaker power differences from
+    valid-but-structured points (no zero persistence, no known attack) = the residual channel.
+    Only the B side is checked; static-A raw SIDH users are unprotected.
+  * OUTPUT on reject: ss = fresh random bytes, then re-encryption mismatch, then KEM returns H(s‖ct) =
+    deterministic and identical to unpatched implicit rejection. There is no "correct" key for
+    a crafted ct. NO TIME PADDING: reject skips the ~14 ms ladder+isogeny (≈18 vs ≈33 ms on m510,
+    estimate), but rejection depends only on the public ct, so this leaks nothing about the key.
+    Raw `sidh.DeriveSecret` callers get silent random bytes (different each call, no error).
+  * 3^e3-TORSION: E[3^239] = {P : [3^239]P = O} ≅ (Z/3^239)^2 (a 2-D grid; a basis P,Q gives
+    every point as aP+bQ; all orders are powers of 3). Alice's E[2^372] meets it only in O; T=(0,0)
+    (order 2) lies in Alice's grid, NEVER in Bob's. Bob's kernel = P+[m]Q.
+  * e3 FLOAT: floor((nbits+1)/log2 3) is exact in theory (value ∈ (e3, e3+0.63]). The margins
+    above e3 are 0.54/0.63/0.12 (p434/p503/p751) ≫ 1e-13 double error ⇒ no rounding risk.
+    It is a hard-codable constant (a style nit).
+  * HONEST ct NEVER hits the zero: a valid basis ⇒ registers are [2^i]P or have coefficient ±1 on
+    a basis element ⇒ never O; never T (wrong order). X=0 ⇔ T, Z=0 ⇔ O on a Montgomery curve.
+    Only coincidental zero temporaries remain (~1/p ≈ 2^-751, which no attacker can steer).
+- Probe: `06-circl/circl/dh/sidh/internal/p751/cln_probe_test.go` (TestCLNProbe,
+  BenchmarkCLNVsLadder). Test-only; it does not change the decaps path.
+
 ## Correctness invariant
 Every defense MUST produce the same result as the original ladder:
 TestChunkedLadderMatchesOriginal (bit-identical R1.X/R1.Z) and
@@ -334,8 +404,11 @@ TestBlindedLadderMatchesOriginal / TestSharedSecretUnderDefenses
 - [ ] Pinning comparison (fixed ratio, `hbctl.sh hwp R`, R=8/15/18/22) at 45 W: is pinning
       faster than random at equal security? Decides whether "randomized beats pinning" holds.
 - [ ] DVFS reaction time τ microbenchmark (not written yet).
-- [ ] Ciphertext validation: find the CIRCL commit that added SIKE pk validation
-      (before SIDH was removed from CIRCL), port the timing harness to it, measure overhead.
+- [x] 2026-11-25 (m510 again; c220g5 unavailable) CIRCL patch found and analysed: 10923e8 = CLN
+      ciphertext validation in DeriveSecretB. It rejects 15/15 attack cts. See the "CIRCL's deployed
+      Hertzbleed patch" section. Go 1.21.13 installed by hand on this node (setup-cloudlab.sh not run).
+- [ ] Ciphertext validation, remaining: end-to-end Decapsulate overhead + sike_local run with
+      validation enabled (expect no leak).
 - [ ] Turbo-off / pin-min Class 2 adopt runs (`hbctl.sh turbo off`).
 - [ ] Compensating dummy-load (Class 3) still untested.
 
@@ -355,8 +428,8 @@ IMPLEMENT (our code):
     positive result; budget time)
 ADOPT/REPRODUCE (run existing + measure overhead on our HW):
   - Class 1 ciphertext validation: diff unpatched CIRCL (1fc36...) vs
-    current patched CIRCL main; confirm it blocks attack; measure 5-11%
-    overhead. Doubles as the input-validation case study.
+    current patched CIRCL main (DONE: commit 10923e8, CLN test, blocks attack ct);
+    measure overhead (component estimate ≈13–15% on m510). Doubles as the input-validation case study.
   - Class 2 disable turbo: echo 1 > .../intel_pstate/no_turbo
   - Class 2 fix min freq: set scaling_max_freq=min
   - Class 2 Goldilocks: reproduce if S&P'26 artifact public, else cite
