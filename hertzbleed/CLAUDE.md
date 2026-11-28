@@ -414,8 +414,21 @@ TestBlindedLadderMatchesOriginal / TestSharedSecretUnderDefenses
          but the operating point must be calibrated PER NODE (f_cap depends on the part and its
          RAPL cap), and randomization adds no security over a correctly calibrated pin.
       Caveat: d varies by ~±0.1 run-to-run (10_30 0.70 > none 0.59), so the 12_30/14_30 numbers
-      are "full leak", not a ranking. Next: pin 16/17 to locate the edge more precisely
-      (pin 15 margin), and test whether a pin at f_cap−margin stays safe across thermal states.
+      are "full leak", not a ranking.
+- [x] 2026-11-28 PIN EDGE (same node, data/matrix-c220g5-pinedge-1128-0036, 45 W, N=599/side,
+      PStateErrors 0, fresh `none` in the same session):
+        config        f0 / f1 ms     Δ       d     K99     slowdown  Bzy MHz  PkgW
+        none          578.3/570.2  −1.40%  0.63    56       —        1658    89.6
+        pin 16        609.5/608.7  −0.14%  0.09  ≳540*    +6.1%     1592    85.7
+        pin 17        588.8/588.1  −0.12%  0.08  ≳540*    +2.5%     1647    87.9
+      *d < 2·SE (0.116) ⇒ not significant; honest bound d < 0.08–0.09+0.116 ≈ 0.2 ⇒ K99 ≳ 540
+      (script's 2.5k–3k is an extrapolation). Pin 15 was d=0.02, so 16/17 MAY carry a tiny real
+      leak; needs more N (e.g. 3× rounds) to tell.
+      EDGE: between 17 (undetectable, 87.9 W < 89.6 W cap, got 1.65 of 1.7 GHz) and 18 (d=0.45,
+      at the cap, 1.69 GHz). Best measured point on this node: pin 17 → leak below detection at
+      only +2.5% time (vs prand_8_30: d=0.41 at +9.1%). Pinning just under f_cap is nearly free.
+      Next: more N at pins 16/17/15 to bound the residual; check margin across thermal states /
+      a second node (f_cap differs per node, so the pin needs per-node calibration).
 - (superseded) 2026-11-24 RANGE SWEEP plan ("dream result" = a security/performance DIAL):
       raise the random range into turbo so the 45 W cap SOMETIMES throttles → partial
       leak with K99 between 51 and undetectable (e.g. 100, 500, …). Configs:
