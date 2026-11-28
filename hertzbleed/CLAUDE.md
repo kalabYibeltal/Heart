@@ -382,16 +382,40 @@ TestBlindedLadderMatchesOriginal / TestSharedSecretUnderDefenses
       than baseline, at +8.6% time. Together with 8_30 (undetectable, +15%) and 15_30 (full
       leak, +1%), this is the security/performance dial. Next: plot K99 vs slowdown;
       more N at 8_30 and 10_30; try 9_30, 11_30.
-- [ ] 2026-11-25 UNATTENDED in tmux session "hb" (`tmux attach -t hb`, log ~/overnight_cliff.log):
-      defense/scripts/overnight_cliff.sh runs prand_12_30 + prand_14_30 into the cliff dir,
-      inserts an AUTO-GENERATED summary block above this line, commits locally, and
-      tries to push. PUSH WILL FAIL: the node has no GitHub credentials (no ssh key, no
-      helper). The user must `cd ~/Heart && git push` from their own VS Code terminal.
-      The original run was interrupted mid prand_12_30; the partial data was deleted before rerunning.
+- (abandoned) 2026-11-25 overnight_cliff.sh in tmux died during prand_12_30 (1 of 6 rounds saved
+      in cliff-1125-0107, prand_14_30 never ran). Superseded by the 11-27 cliffpin run below.
       Long runs: ALWAYS start them in tmux (VS Code disconnect can kill Claude's children).
-- [ ] RUNNING 2026-11-25: CLIFF SWEEP, min ratio inside the cliff: none, prand_10_30,
-      prand_12_30, prand_14_30 (same setup) → data/matrix-c220g5-cliff-<date>/. Hope: d
-      between 0.07 and 0.5 (K99 100–1000) = the dial.
+      Push needs the user's credentials (`cd ~/Heart && git push` from their own terminal).
+- [x] 2026-11-27 CLIFF + PIN SWEEP on a DIFFERENT c220g5 node (node0.kalab-328425), one session,
+      data/matrix-c220g5-cliffpin-1127-2004, 45 W/pkg, N=599/side, PStateErrors 0. Power/MHz =
+      turbostat rows with Busy%>50 (both packages summed).
+        config        f0 / f1 ms     Δ       d     K99    slowdown  Bzy MHz  PkgW
+        none          577.2/568.6  −1.49%  0.59    62      —        1659    89.6
+        prand_8_30    627.5/622.5  −0.80%  0.41   131    +9.1%     1575    89.6
+        prand_10_30   604.1/597.3  −1.13%  0.70    45    +4.9%     1625    89.5
+        prand_12_30   590.6/585.3  −0.90%  0.50    86    +2.6%     1654    89.6
+        prand_14_30   580.6/573.7  −1.18%  0.58    64    +0.7%     1680    89.6
+        pin 12        804.4/804.9  +0.06%  0.04  ≥1500  +40.5%     1200    75.3
+        pin 15        645.8/646.0  +0.03%  0.02  ≥1500  +12.7%     1500    83.3   ← BEST
+        pin 18        573.8/569.5  −0.74%  0.45   109    −0.2%     1694    88.9
+      (pin R = prand_R_R, i.e. HB_PSTATE_RATIOS=R; same code path and write rate as random.)
+      FINDINGS:
+      1. f_cap MOVES BETWEEN NODES of the same type: ≈1.65–1.70 GHz here vs ≈1.85 GHz on the
+         11-25 node (same SKU/RAPL setting → silicon/thermal variation). Pin 18 asked 1.8 GHz,
+         got 1.69 (throttled) → leaks. Pin 15 holds exactly 1.5 GHz at 83 W < 90 W cap → closed.
+      2. The random-range result does NOT transfer: prand_8_30 was undetectable on the old node
+         (d=0.07) but leaks here (d=0.41, K99≈2× baseline); 10_30 (0.24 before) is a full leak
+         now. Every config that is ever above f_cap and runs at the cap leaks.
+      3. "RANDOMIZED BEATS PINNING" IS NOT SUPPORTED. Security needs every epoch ≤ f_cap; under
+         that constraint the fastest data-independent schedule is a fixed pin just under f_cap
+         (here 15: closed at +12.7%). Any random range ≤ f_cap has a lower mean f ⇒ slower
+         (e.g. 8–16 was +62%, 8–22 +34% on the old node). Ranges that reach above f_cap gain
+         speed only by spending time throttled = leaking. Paper framing: Class 2 forcing works,
+         but the operating point must be calibrated PER NODE (f_cap depends on the part and its
+         RAPL cap), and randomization adds no security over a correctly calibrated pin.
+      Caveat: d varies by ~±0.1 run-to-run (10_30 0.70 > none 0.59), so the 12_30/14_30 numbers
+      are "full leak", not a ranking. Next: pin 16/17 to locate the edge more precisely
+      (pin 15 margin), and test whether a pin at f_cap−margin stays safe across thermal states.
 - (superseded) 2026-11-24 RANGE SWEEP plan ("dream result" = a security/performance DIAL):
       raise the random range into turbo so the 45 W cap SOMETIMES throttles → partial
       leak with K99 between 51 and undetectable (e.g. 100, 500, …). Configs:
@@ -401,8 +425,7 @@ TestBlindedLadderMatchesOriginal / TestSharedSecretUnderDefenses
       Output: defense/data/matrix-c220g5-range-<date>/ . Plot K99 and slowdown vs range.
       Remember: K99 is only trustworthy while d ≫ 0.058 (its SE at N=599); for d<~0.12
       report "≥ ~1500", not the script's extrapolated number.
-- [ ] Pinning comparison (fixed ratio, `hbctl.sh hwp R`, R=8/15/18/22) at 45 W: is pinning
-      faster than random at equal security? Decides whether "randomized beats pinning" holds.
+- [x] 2026-11-27 Pinning comparison: done (pins 12/15/18, see cliffpin entry). Pinning wins.
 - [ ] DVFS reaction time τ microbenchmark (not written yet).
 - [x] 2026-11-25 (m510 again; c220g5 unavailable) CIRCL patch found and analysed: 10923e8 = CLN
       ciphertext validation in DeriveSecretB. It rejects 15/15 attack cts. See the "CIRCL's deployed
